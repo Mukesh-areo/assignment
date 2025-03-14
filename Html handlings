@@ -1,0 +1,74 @@
+from bs4 import BeautifulSoup, Tag
+import spacy
+
+# Load English NLP model
+nlp = spacy.load("en_core_web_sm")
+
+# Function to calculate header confidence score
+def get_header_confidence(text):
+    doc = nlp(text)
+
+    # Strong header condition: Short text + Capitalized first word
+    if len(doc) <= 7 and doc[0].is_title:
+        return 1.0  # 100% confidence
+
+    # Medium confidence condition: Presence of 'risk'
+    if 'risk' in text.lower():
+        return 0.3  # 30% confidence
+
+    return 0.0  # Not a header
+
+# Function to recursively search and wrap content
+def wrap_headers_with_content(html_content):
+    soup = BeautifulSoup(html_content, 'html.parser')
+
+    # Iterate through <label> tags
+    for label_tag in soup.find_all('label'):
+        content_group = []
+        current_wrapper = None
+
+        # Iterate through all child tags inside <label>
+        for tag in label_tag.find_all(True, recursive=False):
+            # Skip empty tags, comments, or irrelevant content
+            if not tag.get_text(strip=True) or tag.name == 'comment':
+                continue
+
+            text = tag.get_text(strip=True)
+            confidence = get_header_confidence(text)
+
+            # If a header is found
+            if confidence >= 0.3:
+                # Append previous content to its wrapper
+                if current_wrapper:
+                    for item in content_group:
+                        current_wrapper.append(item)
+                    content_group.clear()
+
+                # Create a new <ix:nonnumeric> wrapper
+                current_wrapper = soup.new_tag('ix:nonnumeric')
+                label_tag.insert(label_tag.contents.index(tag), current_wrapper)
+
+            # Collect content (inside <ix:nonnumeric>)
+            if current_wrapper:
+                content_group.append(tag)
+
+        # Append remaining content to the last wrapper
+        if current_wrapper:
+            for item in content_group:
+                current_wrapper.append(item)
+
+    return str(soup)
+
+# Read HTML file and process it
+html_file_path = 'sample.html'  # Replace with your file path
+with open(html_file_path, 'r', encoding='utf-8') as file:
+    html_content = file.read()
+
+# Process HTML content
+result = wrap_headers_with_content(html_content)
+
+# Save the modified content to a new file
+with open('output.html', 'w', encoding='utf-8') as file:
+    file.write(result)
+
+print("HTML content has been dynamically wrapped successfully!")
