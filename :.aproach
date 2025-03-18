@@ -1,0 +1,180 @@
+from bs4 import BeautifulSoup, Tag
+import spacy
+import re  # Added for colon and period-based detection
+
+# Load English NLP model
+nlp = spacy.load("en_core_web_sm")
+
+# Function to calculate header confidence score
+def get_header_confidence(text):
+    doc = nlp(text)
+
+    # Strong header condition: Short text + Capitalized first word
+    if len(doc) <= 7 and doc[0].is_title:
+        return 1.0  # 100% confidence
+
+    # Medium confidence condition: Presence of 'risk'
+    if 'risk' in text.lower():
+        return 0.3  # 30% confidence
+
+    # Handle inline headers with ':' or '.'
+    if re.match(r'^.*[:.]$', text.strip()):
+        potential_header = text.strip()[:-1]  # Remove ':' or '.' for header evaluation
+        if len(potential_header.split()) <= 7:
+            return 1.0  # Treat text before colon or period as a header
+
+    return 0.0  # Not a header
+
+# Function to wrap content with <ix:nonnumeric> tags
+def wrap_headers_with_content(html_content):
+    soup = BeautifulSoup(html_content, 'html.parser')
+
+    for label_tag in soup.find_all('label'):
+        content_group = []
+        current_wrapper = None
+
+        for tag in label_tag.find_all(True, recursive=False):
+            if not tag.get_text(strip=True) or tag.name == 'comment':
+                continue
+
+            text = tag.get_text(strip=True)
+            confidence = get_header_confidence(text)
+
+            # Handle inline headers with ':' or '.'
+            if re.match(r'^.*[:.]$', text.strip()) and confidence >= 0.3:
+                current_wrapper = soup.new_tag('ix:nonnumeric')
+                inline_header_tag = soup.new_tag('p')
+                inline_header_tag.string = text
+                label_tag.insert(label_tag.contents.index(tag), current_wrapper)
+                current_wrapper.append(inline_header_tag)
+
+                continue  # Skip the rest since the inline header is processed
+
+            # If a regular header is found
+            if confidence >= 0.3:
+                if current_wrapper:
+                    for item in content_group:
+                        current_wrapper.append(item)
+                    content_group.clear()
+
+                current_wrapper = soup.new_tag('ix:nonnumeric')
+                label_tag.insert(label_tag.contents.index(tag), current_wrapper)
+
+            if current_wrapper:
+                content_group.append(tag)
+
+        if current_wrapper:
+            for item in content_group:
+                current_wrapper.append(item)
+
+    return str(soup)
+
+# Read HTML file and process it
+html_file_path = 'sample.html'
+with open(html_file_path, 'r', encoding='utf-8') as file:
+    html_content = file.read()
+
+result = wrap_headers_with_content(html_content)
+
+with open('output.html', 'w', encoding='utf-8') as file:
+    file.write(result)
+
+print("HTML content has been dynamically wrapped successfully!")
+
+
+
+
+
+
+
+
+
+
+
+
+
+from bs4 import BeautifulSoup, Tag
+import spacy
+import re  # Added for colon-based text splitting
+
+# Load English NLP model
+nlp = spacy.load("en_core_web_sm")
+
+# Function to calculate header confidence score
+def get_header_confidence(text):
+    doc = nlp(text)
+
+    # Strong header condition: Short text + Capitalized first word
+    if len(doc) <= 7 and doc[0].is_title:
+        return 1.0  # 100% confidence
+
+    # Medium confidence condition: Presence of 'risk'
+    if 'risk' in text.lower():
+        return 0.3  # 30% confidence
+
+    # Handle inline headers like "Header: Content..."
+    if ':' in text:
+        potential_header, _ = text.split(':', 1)
+        if len(potential_header.split()) <= 7:
+            return 1.0  # Treat text before colon as a header
+
+    return 0.0  # Not a header
+
+# Function to wrap content with <ix:nonnumeric> tags
+def wrap_headers_with_content(html_content):
+    soup = BeautifulSoup(html_content, 'html.parser')
+
+    for label_tag in soup.find_all('label'):
+        content_group = []
+        current_wrapper = None
+
+        for tag in label_tag.find_all(True, recursive=False):
+            if not tag.get_text(strip=True) or tag.name == 'comment':
+                continue
+
+            text = tag.get_text(strip=True)
+            confidence = get_header_confidence(text)
+
+            # Handle inline headers with colon
+            if ':' in text and confidence >= 0.3:
+                potential_header, following_text = text.split(':', 1)
+
+                # Create a new wrapper for inline header content
+                current_wrapper = soup.new_tag('ix:nonnumeric')
+                inline_header_tag = soup.new_tag('p')
+                inline_header_tag.string = f"{potential_header}: {following_text.strip()}"
+                label_tag.insert(label_tag.contents.index(tag), current_wrapper)
+                current_wrapper.append(inline_header_tag)
+
+                continue  # Skip the rest since the inline header is processed
+
+            # If a regular header is found
+            if confidence >= 0.3:
+                if current_wrapper:
+                    for item in content_group:
+                        current_wrapper.append(item)
+                    content_group.clear()
+
+                current_wrapper = soup.new_tag('ix:nonnumeric')
+                label_tag.insert(label_tag.contents.index(tag), current_wrapper)
+
+            if current_wrapper:
+                content_group.append(tag)
+
+        if current_wrapper:
+            for item in content_group:
+                current_wrapper.append(item)
+
+    return str(soup)
+
+# Read HTML file and process it
+html_file_path = 'sample.html'
+with open(html_file_path, 'r', encoding='utf-8') as file:
+    html_content = file.read()
+
+result = wrap_headers_with_content(html_content)
+
+with open('output.html', 'w', encoding='utf-8') as file:
+    file.write(result)
+
+print("HTML content has been dynamically wrapped successfully!")
