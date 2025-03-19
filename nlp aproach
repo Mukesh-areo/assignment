@@ -1,0 +1,209 @@
+import re
+from bs4 import BeautifulSoup, Tag
+import spacy
+
+# Load the spaCy model
+nlp = spacy.load("en_core_web_sm")
+
+# Custom keywords for header detection
+HEADER_KEYWORDS = ["risk", "warning", "notice", "important", "caution"]
+
+# Regex for uppercase headers
+UPPERCASE_HEADER_PATTERN = re.compile(r'^[A-Z\s]+$')
+
+def is_uppercase_header(text):
+    """Check if text is a potential uppercase header."""
+    return bool(UPPERCASE_HEADER_PATTERN.match(text.strip()))
+
+def contains_keyword(text):
+    """Check if text contains header-related keywords."""
+    return any(keyword.lower() in text.lower() for keyword in HEADER_KEYWORDS)
+
+def is_spacy_header(text):
+    """Use spaCy NLP to identify headers with linguistic patterns."""
+    doc = nlp(text)
+    
+    # Heuristic rule: If first token is a keyword + Titlecase or uppercase format
+    for token in doc:
+        if token.text.lower() in HEADER_KEYWORDS and (token.is_title or token.is_upper):
+            return True
+    
+    # Additional check for key phrases like "Risk Factors:"
+    if ':' in text and text.split(':')[0].strip().lower() in HEADER_KEYWORDS:
+        return True
+
+    return False
+
+def find_header_text(tag):
+    """Enhanced header detection logic using styles, regex, and NLP."""
+    text = tag.get_text(strip=True)
+    
+    # Direct <b> or <i> tags
+    if tag.name in ['b', 'i']:
+        return True
+    
+    # Check inline styles
+    if tag.has_attr('style'):
+        style = tag['style'].lower()
+        if 'font-weight:bold' in style or 'font-style:italic' in style:
+            return True
+        if 'font-weight:bold' in style and 'font-style:italic' in style:
+            return True
+
+    # Check uppercase headers, keyword-based headers, or NLP-based detection
+    if is_uppercase_header(text) or contains_keyword(text) or is_spacy_header(text):
+        return True
+
+    # Recursively check nested tags
+    for nested_tag in tag.find_all(True):
+        if find_header_text(nested_tag):
+            return True
+
+    return False
+
+def wrap_headers_with_content(html_content):
+    """Wrap headers and their content with ix:nonnumeric tags."""
+    soup = BeautifulSoup(html_content, 'html.parser')
+
+    for label_tag in soup.find_all('label'):
+        content_group = []
+        current_wrapper = None
+
+        for tag in label_tag.find_all(recursive=False):
+            if not tag.get_text(strip=True):
+                continue
+
+            # Enhanced header detection
+            if find_header_text(tag):
+                if current_wrapper:
+                    for item in content_group:
+                        current_wrapper.append(item)
+                    content_group.clear()
+
+                text = tag.get_text(strip=True)
+
+                # Handle headers like 'Header Text: Following content...'
+                if ':' in text and text.split(':')[-1].strip():
+                    text = text.split(':')[0].strip()
+
+                # Create ix:nonnumeric tag
+                current_wrapper = soup.new_tag('ix:nonnumeric', attrs={
+                    "name": "cef:RiskTextblock",
+                    "style": "outline: 3px solid red; display: block;",
+                    'data-dimension': text
+                })
+                label_tag.insert(label_tag.contents.index(tag), current_wrapper)
+
+            if current_wrapper:
+                content_group.append(tag)
+
+        if current_wrapper:
+            for item in content_group:
+                current_wrapper.append(item)
+
+    return str(soup)
+
+# Specify the path to the HTML file
+html_file_path = r"D:\cef_risk_table\cik0001478102-20240827_unwrap.htm"
+with open(html_file_path, 'r', encoding='utf-8') as file:
+    html_content = file.read()
+
+result = wrap_headers_with_content(html_content)
+
+with open('output.html', 'w', encoding='utf-8') as file:
+    file.write(result)
+
+print("HTML content has been dynamically wrapped successfully!")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+from bs4 import BeautifulSoup, Tag
+import spacy
+
+# Load the spaCy model
+nlp = spacy.load("en_core_web_sm")
+
+def find_header_text(tag):
+    """Recursively find headers using <b>, <i>, or combined bold + italic styles."""
+    if tag.name in ['b', 'i']:
+        return True
+    if tag.has_attr('style'):
+        style = tag['style'].lower()
+        if 'font-weight:bold' in style or 'font-style:italic' in style:
+            return True
+        # Combined bold + italic check
+        if 'font-weight:bold' in style and 'font-style:italic' in style:
+            return True
+    for nested_tag in tag.find_all(True):
+        if nested_tag.name in ['b', 'i'] or (
+            nested_tag.has_attr('style') and (
+                'font-weight:bold' in nested_tag['style'].lower() or 
+                'font-style:italic' in nested_tag['style'].lower() or
+                ('font-weight:bold' in nested_tag['style'].lower() and 'font-style:italic' in nested_tag['style'].lower())
+            )
+        ):
+            return True
+    return False
+
+def wrap_headers_with_content(html_content):
+    soup = BeautifulSoup(html_content, 'html.parser')
+
+    for label_tag in soup.find_all('label'):
+        content_group = []
+        current_wrapper = None
+
+        for tag in label_tag.find_all(recursive=False):
+            if not tag.get_text(strip=True):
+                continue
+
+            # Detect headers in both direct and nested tags
+            if find_header_text(tag):
+                if current_wrapper:
+                    for item in content_group:
+                        current_wrapper.append(item)
+                    content_group.clear()
+
+                text = tag.get_text(strip=True)
+                if ':' in text and text.split(':')[-1].strip():
+                    text = text.split(':')[0].strip()
+
+                current_wrapper = soup.new_tag('ix:nonnumeric', attrs={
+                    "name": "cef:RiskTextblock",
+                    "style": "outline: 3px solid red; display: block;",
+                    'data-dimension': text
+                })
+                label_tag.insert(label_tag.contents.index(tag), current_wrapper)
+
+            if current_wrapper:
+                content_group.append(tag)
+
+        if current_wrapper:
+            for item in content_group:
+                current_wrapper.append(item)
+
+    return str(soup)
+
+# Specify the path to the HTML file
+html_file_path = r"D:\cef_risk_table\cik0001478102-20240827_unwrap.htm"
+with open(html_file_path, 'r', encoding='utf-8') as file:
+    html_content = file.read()
+
+result = wrap_headers_with_content(html_content)
+
+with open('output.html', 'w', encoding='utf-8') as file:
+    file.write(result)
+
+print("HTML content has been dynamically wrapped successfully!")
