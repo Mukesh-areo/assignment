@@ -1,0 +1,106 @@
+from bs4 import BeautifulSoup
+
+# Sample complex HTML content
+html_content = """
+<html>
+<body>
+<div>Some intro content</div>
+<section>
+    <div>
+        <p style="font-weight:bold;">Start Boundary</p>
+        <p style="font-weight:bold;">Direct Bold Heading</p>
+        <div>
+            <p>Some text here.</p>
+            <div>
+                <ul>
+                    <li><span style="font-weight:bold;">Nested Bold Heading</span></li>
+                    <li>Regular list item</li>
+                </ul>
+                <table>
+                    <tr>
+                        <td><div style="font-weight:bold;">Table Bold Heading</div></td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</section>
+<footer>
+    <span>End Boundary</span>
+</footer>
+<p>Content outside the boundary</p>
+</body>
+</html>
+"""
+
+# Parse the HTML
+soup = BeautifulSoup(html_content, "html.parser")
+
+# Define boundary texts dynamically
+start_boundary_text = "Start Boundary"
+end_boundary_text = "End Boundary"
+
+# Find start and end elements dynamically
+start_element = soup.find(lambda tag: tag.string and start_boundary_text in tag.get_text(strip=True))
+end_element = soup.find(lambda tag: tag.string and end_boundary_text in tag.get_text(strip=True))
+
+# Extract content between boundaries
+content_between = []
+capture = False
+
+def traverse_and_extract(tag):
+    """ Recursively extract all content between boundaries while maintaining structure """
+    global capture
+    if tag == start_element:
+        capture = True  # Start capturing
+        return
+    if tag == end_element:
+        capture = False  # Stop capturing
+        return
+    if capture:
+        content_between.append(tag)  # Store tag objects (not string) for modification
+    for child in tag.children:
+        if hasattr(child, 'children'):  # Ensure it's a tag, not just text
+            traverse_and_extract(child)
+
+# Start extraction from <body>
+traverse_and_extract(soup.body)
+
+# Function to check if a tag is bold based on style
+def is_bold(tag):
+    if tag.has_attr("style"):
+        style = tag["style"].replace(" ", "").lower()
+        return "font-weight:bold" in style
+    return False
+
+# Modify extracted content by wrapping dynamically detected bold elements
+for tag in content_between:
+    bold_elements = tag.find_all(lambda t: is_bold(t))  # Find all elements with bold style
+    for bold in bold_elements:
+        # Check if the bold element is a direct sibling or nested
+        parent = bold.find_parent()
+        is_direct_sibling = parent and parent in content_between  # True if parent is in extracted content
+
+        # Create <ix:nonnumeric> wrapper
+        ix_tag = soup.new_tag("ix:nonnumeric", name="bold_header", style="font-weight:bold;")
+        ix_tag['data-position'] = "direct" if is_direct_sibling else "nested"  # Add attribute
+
+        # Wrap the original tag inside <ix:nonnumeric>
+        bold.wrap(ix_tag)
+
+# Remove original extracted content
+if start_element and end_element:
+    insert_point = start_element.find_next_sibling()  # Find where to insert modified content
+    while insert_point and insert_point != end_element:
+        next_sibling = insert_point.find_next_sibling()  # Store reference before removal
+        insert_point.extract()  # Remove original content
+        insert_point = next_sibling  # Move to the next sibling
+
+    # Insert modified content back into the original location
+    for modified_tag in content_between:
+        end_element.insert_before(modified_tag)
+
+# Final modified HTML
+modified_html = str(soup)
+
+print(modified_html)  # Output the modified HTML
