@@ -1,0 +1,135 @@
+from bs4 import BeautifulSoup, Tag
+
+# === CONFIGURATION ===
+START_TEXT = "RISK FACTORS AND SPECIAL CONSIDERATIONS"
+END_TEXT = "INVESTMENT RESTRICTIONS"
+INPUT_PATH = r"C:\Users\LENOVO\Downloads\untagged file AB Carval Opportunistic Credit Fund.html"
+#INPUT_PATH = r"C:\Users\LENOVO\Downloads\AB CarVal Credit Opportunities Fund prospectas tagged_unwrapped.html"
+OUTPUT_PATH = "final_structured_bondary_output.html"
+
+# === HELPERS ===
+def is_inside_toc(tag):
+    """Skip Table of Contents references (inside <a> or <table>)."""
+    return tag.find_parent("a") or tag.find_parent("table")
+
+def find_first_body_occurrence(soup, match_text):
+    """Find the first valid body occurrence of a section title."""
+    for tag in soup.find_all(True):
+        text = tag.get_text(strip=True)
+        if text == match_text and not is_inside_toc(tag):
+            return tag
+    return None
+
+def is_bold(tag: Tag):
+    """Detects if a tag or its children contain bold styling."""
+    if tag.name in ['b', 'strong']:
+        return True
+    if tag.find(['b', 'strong']):
+        return True
+    style = tag.get("style", "").lower().replace(" ", "")
+    return "font-weight:bold" in style
+
+def find_block_parent(tag):
+    """Find the nearest block-level parent (e.g., <p>, <div>) that contains a bold header."""
+    while tag and tag.name not in ['p', 'div', 'section', 'article']:
+        tag = tag.parent
+    return tag
+
+# === MAIN LOGIC ===
+def wrap_bold_blocks_between_boundaries(soup, start_tag, end_tag):
+    """Wraps each bold header and its following content in <ix:nonnumeric> tags."""
+    in_section = False
+    section_tags = []
+    
+    for tag in soup.find_all(True):
+        if tag == start_tag:
+            in_section = True
+            continue
+        if tag == end_tag:
+            break
+        if in_section:
+            section_tags.append(tag)
+
+    wrapped_count = 1
+    current_block = []
+    bold_seen = False
+
+    for tag in section_tags:
+        if is_bold(tag):
+            block_parent = find_block_parent(tag)
+
+            if block_parent and block_parent not in current_block:
+                if bold_seen and current_block:
+                    label_text = current_block[0].get_text(strip=True).split(":")[0][:60]
+
+                    wrapper = soup.new_tag("ix:nonnumeric", attrs={
+                        "name": label_text,
+                        "style": "background-color:#ffffcc; display:block;"
+                    })
+
+                    insert_point = current_block[0]
+                    parent = insert_point.parent
+                    index = parent.contents.index(insert_point)
+                    parent.insert(index, wrapper)
+
+                    for t in current_block:
+                        wrapper.append(t.extract())
+
+                    wrapped_count += 1
+                    current_block = []
+
+                bold_seen = True
+                current_block.append(block_parent)
+        elif bold_seen:
+            current_block.append(tag)
+
+    # Wrap remaining block
+    if current_block:
+        label_text = current_block[0].get_text(strip=True).split(":")[0][:60]
+        wrapper = soup.new_tag("ix:nonnumeric", attrs={
+            "name": label_text,
+            "style": "background-color:#ffffcc; display:block;"
+        })
+        insert_point = current_block[0]
+        parent = insert_point.parent
+        index = parent.contents.index(insert_point)
+        parent.insert(index, wrapper)
+
+        for t in current_block:
+            wrapper.append(t.extract())
+
+# === DRIVER ===
+def main():
+    with open(INPUT_PATH, "r", encoding="utf-8") as f:
+        soup = BeautifulSoup(f.read(), "html.parser")
+
+    start_tag = find_first_body_occurrence(soup, START_TEXT)
+    end_tag = find_first_body_occurrence(soup, END_TEXT)
+
+    if not start_tag or not end_tag:
+        print("❌ Start or end tag not found in body.")
+        return
+
+    # Insert boundary markers visually
+    start_marker = soup.new_tag("ix:nonnumeric", attrs={
+        "start": "risk-section",
+        "style": "outline:2px dashed green; background-color:#e6ffe6; display:block; padding:2px; margin:6px 0;"
+    })
+    start_tag.insert_before(start_marker)
+
+    end_marker = soup.new_tag("ix:nonnumeric", attrs={
+        "end": "risk-section",
+        "style": "outline:2px dashed green; background-color:#e6ffe6; display:block; padding:2px; margin:6px 0;"
+    })
+    end_tag.insert_before(end_marker)
+
+    # Process bold-to-bold content between the markers
+    wrap_bold_blocks_between_boundaries(soup, start_tag, end_tag)
+
+    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
+        f.write(str(soup))
+
+    print(f"✅ Done! Wrapped output saved to: {OUTPUT_PATH}")
+
+if __name__ == "__main__":
+    main()
