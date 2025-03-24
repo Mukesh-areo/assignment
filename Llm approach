@@ -1,0 +1,123 @@
+import requests
+import json
+from bs4 import BeautifulSoup
+
+# === SETTINGS ===
+OLLAMA_URL = "http://localhost:11434/api/generate"
+MODEL = "llama3"
+HTML_FILE = "prospectus.html"
+OUTPUT_FILE = "tagged_inline_output.html"
+CONTEXT_REF = "Doc2025"
+CONFIDENCE_THRESHOLD = 0.75
+
+# === STEP 1: Load and parse HTML ===
+with open(HTML_FILE, 'r', encoding='utf-8') as f:
+    soup = BeautifulSoup(f, 'html.parser')
+
+# === STEP 2: Extract text blocks ===
+candidates = []
+for div in soup.find_all('div'):
+    text = div.get_text(strip=True)
+    if text and len(text) > 20:
+        candidates.append({'element': div, 'text': text})
+
+print(f"Extracted {len(candidates)} blocks.")
+
+# === STEP 3: Prompt builder ===
+def build_prompt(text):
+    return f"""
+You are an XBRL tagging assistant.
+
+Given the financial text below, return:
+- The best matching XBRL tag (e.g., us-gaap:InvestmentObjective)
+- The value type (ix:nonNumeric or ix:nonFraction)
+- The exact phrase from the text that should be tagged
+- Your confidence score (0.0 to 1.0)
+
+Text: "{text}"
+
+Respond ONLY with valid JSON like:
+{{
+  "xbrl_tag": "us-gaap:InvestmentObjective",
+  "value_type": "ix:nonNumeric",
+  "text_to_tag": "maximize total return",
+  "confidence": 0.91
+}}
+"""
+
+# === STEP 4: Call Ollama REST API ===
+def query_ollama(prompt):
+    try:
+        response = requests.post(
+            OLLAMA_URL,
+            json={"model": MODEL, "prompt": prompt, "stream": False}
+        )
+        return response.json()["response"]
+    except Exception as e:
+        print("Ollama API error:", e)
+        return ""
+
+# === STEP 5: Inject inline tag ===
+def inject_inline_tag(element, tag, value_type, context_ref, phrase):
+    html = str(element)
+    if phrase not in html:
+        print(f"  ⚠️ Phrase not found: {phrase} — using full block fallback.")
+        return False
+
+    ix_tag = f'<{value_type} name="{tag}" contextRef="{context_ref}">{phrase}</{value_type}>'
+    updated_html = html.replace(phrase, ix_tag, 1)
+    new_element = BeautifulSoup(updated_html, 'html.parser').find('div')
+    element.replace_with(new_element)
+    return True
+
+# === STEP 6: Fallback: full block tag ===
+def inject_full_tag(element, tag, value_type, context_ref, text):
+    element.clear()
+    new_tag = soup.new_tag(value_type, name=tag, contextRef=context_ref)
+    new_tag.string = text
+    element.append(new_tag)
+
+# === STEP 7: Tagging loop ===
+for block in candidates:
+    prompt = build_prompt(block["text"])
+    print(f"Processing: {block['text'][:60]}...")
+
+    try:
+        raw = query_ollama(prompt)
+        last_line = raw.strip().split('\n')[-1]
+        result = json.loads(last_line)
+
+        if result["confidence"] < CONFIDENCE_THRESHOLD:
+            print(f"  ✗ Skipped (low confidence: {result['confidence']:.2f})")
+            continue
+
+        # Try inline first
+        success = inject_inline_tag(
+            block["element"],
+            result["xbrl_tag"],
+            result["value_type"],
+            CONTEXT_REF,
+            result["text_to_tag"]
+        )
+
+        # Fallback to full block if inline failed
+        if not success:
+            inject_full_tag(
+                block["element"],
+                result["xbrl_tag"],
+                result["value_type"],
+                CONTEXT_REF,
+                block["text"]
+            )
+
+        print(f"  ✓ Tagged ({result['xbrl_tag']}, conf: {result['confidence']:.2f})")
+
+    except Exception as e:
+        print("  ⚠️ Error processing block:", e)
+        continue
+
+# === STEP 8: Save output ===
+with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
+    f.write(str(soup))
+
+print(f"\n✅ Done! Inline-tagged HTML saved as: {OUTPUT_FILE}")
