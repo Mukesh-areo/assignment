@@ -1,0 +1,47 @@
+from bs4 import BeautifulSoup
+
+html = '''
+<div>
+  <div>
+    <ix:nonnumeric name="Item1" heading="Heading1">Some data</ix:nonnumeric>
+  </div>
+</div>
+
+<div>
+  <ix:nonnumeric name="Item2" heading="Heading2">
+    <div>Nested data</div>
+  </ix:nonnumeric>
+</div>
+'''
+
+soup = BeautifulSoup(html, 'xml')
+
+# Process all ix:nonnumeric tags with heading attribute
+for ix_tag in soup.find_all('ix:nonnumeric', heading=True):
+    parent = ix_tag.parent
+
+    # If the parent is also ix:nonnumeric, skip (already wrapped)
+    if parent.name == 'ix:nonnumeric':
+        continue
+
+    # Check if ix_tag is the only child of its parent
+    siblings = [child for child in parent.contents if not str(child).strip() == '']
+    if len(siblings) == 1 and siblings[0] == ix_tag:
+        # Already wrapped cleanly, skip
+        continue
+
+    # Promote: Wrap the parent inside this ix:nonnumeric
+    new_ix = soup.new_tag("ix:nonnumeric", **ix_tag.attrs)
+
+    # Remove original ix_tag and insert its contents into parent
+    ix_tag.unwrap()
+
+    # Detach the parent and wrap it
+    new_parent = parent.extract()
+    new_ix.append(new_parent)
+
+    # Replace old parent in soup
+    grandparent = new_parent.parent or soup
+    grandparent.append(new_ix)
+
+print(soup.prettify())
