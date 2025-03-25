@@ -1,0 +1,60 @@
+from bs4 import BeautifulSoup
+
+# Load HTML content
+with open("modified_dynamic_labling3.htm", "r", encoding="utf-8") as f:
+    html_content = f.read()
+
+
+
+# Final repair with safe replacement logic
+def safe_replace_div_with_ix(html):
+    soup = BeautifulSoup(html, "html.parser")
+    fixed = 0
+
+    for ix_tag in soup.find_all("ix:nonnumeric", {"name": "cef:RiskTextblock"}):
+        parent_div = ix_tag.find_parent("div")
+        grandparent_div = parent_div.find_parent("div") if parent_div else None
+
+        if parent_div and grandparent_div and parent_div.name == "div" and grandparent_div.name == "div":
+            container = grandparent_div.parent
+            if not container:
+                continue
+
+            # Save index of grandparent_div in its parent's contents
+            index = list(container.children).index(grandparent_div)
+
+            # Preserve the original inner content (like bold heading)
+            preserved_heading = list(ix_tag.children)
+
+            # Create a new <ix:nonnumeric> with the same attributes
+            new_ix = soup.new_tag("ix:nonnumeric", attrs=dict(ix_tag.attrs))
+
+            # Remove grandparent div and append it inside new_ix
+            visual_block = grandparent_div.extract()
+            new_ix.append(visual_block)
+
+            # Add preserved heading back to the beginning of the first inner <div>
+            first_inner_div = new_ix.find("div")
+            if first_inner_div:
+                for item in reversed(preserved_heading):
+                    first_inner_div.insert(0, item)
+
+            # Replace the grandparent div's position with the new ix wrapper
+            container.insert(index, new_ix)
+
+            # Remove the old <ix:nonnumeric> tag (now merged)
+            ix_tag.decompose()
+
+            fixed += 1
+
+    return soup.prettify(), fixed
+
+# Apply the fix
+final_html, fixed_total = safe_replace_div_with_ix(html_content)
+
+# Save result
+final_fixed_output = "abi_final_fixed_heading_restored.html"
+with open(final_fixed_output, "w", encoding="utf-8") as f:
+    f.write(final_html)
+
+final_fixed_output, fixed_total
