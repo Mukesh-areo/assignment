@@ -1,0 +1,65 @@
+from bs4 import BeautifulSoup, Tag
+
+# Load HTML content
+with open("modified_dynamic_labling3.htm", "r", encoding="utf-8") as f:
+    html_content = f.read()
+
+# Function to wrap only <ix:nonnumeric> blocks with actual body content
+def safe_wrap_if_body_exists(html):
+    soup = BeautifulSoup(html, "html.parser")
+    wrapped_count = 0
+
+    for ix_tag in soup.find_all("ix:nonnumeric", {"name": "cef:RiskTextblock"}):
+        parent_div = ix_tag.find_parent("div")
+        grandparent_div = parent_div.find_parent("div") if parent_div else None
+
+        if not (parent_div and grandparent_div and parent_div.name == "div" and grandparent_div.name == "div"):
+            continue
+
+        # Check if it's heading-only (e.g., only one bold <div>)
+        text = ix_tag.get_text(strip=True)
+        bold_tags = [child for child in ix_tag.children if isinstance(child, Tag) and "font-weight:bold" in child.get("style", "")]
+        is_heading_only = (len(bold_tags) == 1 and len(text) == len(bold_tags[0].get_text(strip=True)))
+
+        if is_heading_only:
+            continue  # Don't touch heading-only sections
+
+        # Prepare to wrap valid content blocks
+        container = grandparent_div.parent
+        if not container:
+            continue
+
+        try:
+            index = list(container.children).index(grandparent_div)
+        except ValueError:
+            continue
+
+        # Preserve heading
+        preserved_heading = list(ix_tag.children)
+
+        # Create new wrapper tag
+        new_ix = soup.new_tag("ix:nonnumeric", attrs=dict(ix_tag.attrs))
+        visual_block = grandparent_div.extract()
+        new_ix.append(visual_block)
+
+        # Insert preserved heading at the top
+        first_inner_div = new_ix.find("div")
+        if first_inner_div:
+            for item in reversed(preserved_heading):
+                first_inner_div.insert(0, item)
+
+        # Insert new wrapped block and remove the old tag
+        container.insert(index, new_ix)
+        ix_tag.decompose()
+        wrapped_count += 1
+
+    return soup.prettify(), wrapped_count
+
+# Run the fix
+final_html, wrapped = safe_wrap_if_body_exists(html_content)
+
+# Save output
+with open("abi_final_partial_wrapped_preserving_headings.html", "w", encoding="utf-8") as f:
+    f.write(final_html)
+
+print(f"✅ Wrapped sections: {wrapped}")
