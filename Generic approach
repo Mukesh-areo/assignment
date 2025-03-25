@@ -1,0 +1,61 @@
+from bs4 import BeautifulSoup, Tag
+
+# Load the HTML
+with open("modified_dynamic_labling3.htm", "r", encoding="utf-8") as f:
+    html_content = f.read()
+
+# Function: wrap from one heading-only <ix:nonnumeric> to the next
+def wrap_heading_to_heading_generic(html):
+    soup = BeautifulSoup(html, "html.parser")
+    all_ix = soup.find_all("ix:nonnumeric", {"name": "cef:RiskTextblock"})
+    wrapped_count = 0
+
+    for i, current_ix in enumerate(all_ix):
+        # Check if current ix is heading-only
+        text = current_ix.get_text(strip=True)
+        bold_tags = [
+            child for child in current_ix.children
+            if isinstance(child, Tag) and "font-weight:bold" in child.get("style", "")
+        ]
+        is_heading_only = (
+            len(bold_tags) == 1 and len(text) == len(bold_tags[0].get_text(strip=True))
+        )
+
+        if not is_heading_only:
+            continue  # Skip rich-content blocks
+
+        # Create a new wrapper ix tag
+        new_ix = soup.new_tag("ix:nonnumeric", attrs=dict(current_ix.attrs))
+        new_ix["style"] = "outline: 2px dashed blue; display: block; padding: 10px;"
+
+        # Move the current heading into the new wrapper
+        new_ix.append(current_ix.extract())
+
+        # Define stopping point (next heading or end)
+        next_ix = all_ix[i + 1] if i + 1 < len(all_ix) else None
+
+        # Move all siblings until the next <ix:nonnumeric>
+        sibling = new_ix.next_sibling
+        while sibling and sibling != next_ix:
+            next_sibling = sibling.next_sibling
+            new_ix.append(sibling.extract())
+            sibling = next_sibling
+
+        # Insert the wrapper in the correct position
+        if next_ix:
+            next_ix.insert_before(new_ix)
+        else:
+            soup.body.append(new_ix)
+
+        wrapped_count += 1
+
+    return soup.prettify(), wrapped_count
+
+# Apply the logic
+final_html, count = wrap_heading_to_heading_generic(html_content)
+
+# Save output
+with open("abi_generic_heading_wrapper.html", "w", encoding="utf-8") as f:
+    f.write(final_html)
+
+print(f"✅ Wrapped blocks: {count}")
