@@ -1,0 +1,151 @@
+import os
+import json
+import hashlib
+from datetime import datetime
+from bs4 import BeautifulSoup
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.vectorstores import FAISS
+from langchain.llms import Ollama
+from langchain.chains import RetrievalQA
+from langchain.prompts import PromptTemplate
+import docx
+import fitz  # PyMuPDF
+
+# === Text Extraction for Different Formats ===
+def extract_text(file_path):
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext == ".html":
+        return extract_text_from_html(file_path)
+    elif ext == ".pdf":
+        return extract_text_from_pdf(file_path)
+    elif ext == ".docx":
+        return extract_text_from_docx(file_path)
+    else:
+        raise ValueError("Unsupported file type: use .html, .pdf, or .docx")
+
+def extract_text_from_html(file_path):
+    with open(file_path, 'r', encoding='utf-8') as f:
+        soup = BeautifulSoup(f, 'html.parser')
+    return soup.get_text(separator='\n', strip=True)
+
+def extract_text_from_pdf(file_path):
+    doc = fitz.open(file_path)
+    return "\n".join([page.get_text() for page in doc])
+
+def extract_text_from_docx(file_path):
+    doc = docx.Document(file_path)
+    return "\n".join([para.text for para in doc.paragraphs])
+
+# === Text Chunking ===
+def chunk_text(text, chunk_size=600, overlap=100):
+    splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=overlap)
+    return splitter.split_text(text)
+
+# === Unique Index Folder for Each File ===
+def get_index_name(file_path):
+    base = os.path.splitext(os.path.basename(file_path))[0]
+    return "index_" + hashlib.md5(base.encode()).hexdigest()
+
+# === Load or Create FAISS Vectorstore ===
+def load_or_create_vectorstore(file_path, chunks):
+    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    index_name = get_index_name(file_path)
+    
+    if os.path.exists(index_name):
+        print(f"[INFO] Loading vector store: {index_name}")
+        db = FAISS.load_local(index_name, embeddings)
+    else:
+        print(f"[INFO] Creating new vector store: {index_name}")
+        db = FAISS.from_texts(chunks, embeddings)
+        db.save_local(index_name)
+    return db, index_name
+
+# === Custom Prompt Template ===
+custom_prompt = PromptTemplate(
+    input_variables=["context", "query"],
+    template="""
+You are a financial analyst assistant. Based on the following extracted content from a 10-K form (XBRL format), extract and summarize the key financial metrics such as revenue, expenses, net income, assets, liabilities, and cash flows.
+
+Use only the content provided. If any data is not found in the text, reply with "Data not available in this section."
+
+Respond in the following JSON format:
+{{
+  "Revenue": "...",
+  "Expenses": "...",
+  "NetIncome": "...",
+  "TotalAssets": "...",
+  "TotalLiabilities": "...",
+  "CashFlowFromOperations": "..."
+}}
+
+Context:
+{context}
+
+Question: {query}
+"""
+)
+
+# === Setup RAG with Ollama ===
+def setup_rag_qa(vectorstore):
+    llm = Ollama(model="llama3", temperature=0.2)
+    retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+    qa_chain = RetrievalQA.from_chain_type(
+        llm=llm,
+        retriever=retriever,
+        chain_type_kwargs={"prompt": custom_prompt}
+    )
+    return qa_chain
+
+# === Feedback Logger ===
+def save_feedback(feedback_data, filename="feedback_log.json"):
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            existing = json.load(f)
+    else:
+        existing = []
+    existing.append(feedback_data)
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(existing, f, indent=4)
+
+# === Main Pipeline with Feedback Loop ===
+def run_rag_with_feedback(file_path, query):
+    text = extract_text(file_path)
+    chunks = chunk_text(text)
+    vectorstore, index_name = load_or_create_vectorstore(file_path, chunks)
+    qa = setup_rag_qa(vectorstore)
+
+    response = qa.run(query)
+    print("\n=== RAG Financial Summary ===")
+    print(response)
+
+    # --- Feedback Input ---
+    print("\nWas this response helpful? (yes/no)")
+    feedback = input(">>> ").strip().lower()
+    correction = ""
+
+    if feedback == "no":
+        print("Please provide your correction or comments:")
+        correction = input(">>> ")
+        if correction:
+            vectorstore.add_texts([correction])
+            vectorstore.save_local(index_name)
+            print("[INFO] Correction added and vector store updated.")
+
+    feedback_record = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "file": os.path.basename(file_path),
+        "index": index_name,
+        "query": query,
+        "response": response,
+        "feedback": feedback,
+        "correction": correction
+    }
+    save_feedback(feedback_record)
+    print("[INFO] Feedback saved. Thank you!")
+
+# === Run It ===
+if __name__ == "__main__":
+    input_path = input("Enter the file path (.html, .pdf, .docx): ").strip()
+    query = input("Enter your query (e.g., summarize financials): ").strip()
+    run_rag_with_feedback(input_path, query)
