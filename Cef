@@ -1,0 +1,44 @@
+from bs4 import BeautifulSoup
+
+# Step 1: Read the HTML content from a file
+with open('input.html', 'r', encoding='utf-8') as file:
+    html_content = file.read()
+
+# Step 2: Parse HTML
+soup = BeautifulSoup(html_content, 'html.parser')
+
+# Step 3: Process each <ix:nonnumeric>
+for ix_tag in soup.find_all('ix:nonnumeric'):
+    # Find the bold <div> inside
+    bold_div = ix_tag.find('div', style=lambda x: x and 'font-weight:bold' in x)
+    
+    if bold_div and bold_div.string:
+        # Store original text
+        original_text = bold_div.string.strip()
+
+        # Clear the string content
+        bold_div.clear()
+
+        # Create <start> tag and insert it
+        start_tag = soup.new_tag("start")
+        bold_div.append(start_tag)
+
+        # Add the original text
+        bold_div.append(original_text)
+
+        # Create </start> using NavigableString
+        end_start_tag = soup.new_string("</start>")
+        bold_div.append(end_start_tag)
+
+        # 🛠 Find the outermost div wrapping both title and body content
+        outer_block = ix_tag.find_parent('div')
+        parent_block = outer_block.find_parent('div')
+        if parent_block:
+            # Place <end> at the very end of the whole block
+            end_tag = soup.new_tag("end")
+            parent_block.append(" ")
+            parent_block.append(end_tag)
+
+# Step 4: Write modified content to output
+with open('output.html', 'w', encoding='utf-8') as file:
+    file.write(str(soup))
