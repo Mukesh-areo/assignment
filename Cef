@@ -42,3 +42,51 @@ for ix_tag in soup.find_all('ix:nonnumeric'):
 # Step 4: Write modified content to output
 with open('output.html', 'w', encoding='utf-8') as file:
     file.write(str(soup))
+
+
+
+
+
+
+
+
+
+from bs4 import BeautifulSoup
+
+# Read input HTML
+with open('input.html', 'r', encoding='utf-8') as file:
+    html_content = file.read()
+
+soup = BeautifulSoup(html_content, 'html.parser')
+
+# Process each <ix:nonnumeric> block
+for ix_tag in soup.find_all('ix:nonnumeric'):
+    # Find bold tag regardless of type (div/span/p/etc.)
+    bold_tag = ix_tag.find(style=lambda x: x and 'font-weight:bold' in x)
+
+    if bold_tag and bold_tag.string:
+        # Store original text
+        original_text = bold_tag.string.strip()
+
+        # Clear the text content
+        bold_tag.clear()
+
+        # Add <start> and the text and </start>
+        start_tag = soup.new_tag("start")
+        bold_tag.append(start_tag)
+        bold_tag.append(original_text)
+        bold_tag.append(soup.new_string("</start>"))
+
+        # Dynamically find the outermost container holding ix_tag
+        outer = ix_tag
+        while outer.parent and outer.parent.name not in ['body', '[document]']:
+            outer = outer.parent
+
+        # Add <end></end> to the outermost container
+        end_tag = soup.new_tag("end")
+        outer.append(" ")
+        outer.append(end_tag)
+
+# Save the output
+with open('output.html', 'w', encoding='utf-8') as file:
+    file.write(str(soup))
