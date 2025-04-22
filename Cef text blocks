@@ -1,0 +1,19 @@
+from bs4 import BeautifulSoup
+
+with open("your_file.html", "r", encoding="utf-8") as f:
+    html = f.read()
+
+soup = BeautifulSoup(html, "html.parser")
+
+for text_node in soup.find_all(string=True):
+    if "[[start of risk]]" in text_node:
+        new_tag = soup.new_tag("start-of-risk")
+        text_node.insert_before(new_tag)
+
+    if "[[end of risk]]" in text_node:
+        new_tag = soup.new_tag("end-of-risk")
+        text_node.insert_before(new_tag)
+
+# Save the result
+with open("tagged_output.html", "w", encoding="utf-8") as f:
+    f.write(str(soup))
