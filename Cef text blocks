@@ -17,3 +17,74 @@ for text_node in soup.find_all(string=True):
 # Save the result
 with open("tagged_output.html", "w", encoding="utf-8") as f:
     f.write(str(soup))
+
+
+
+
+
+from bs4 import BeautifulSoup
+from bs4.element import Tag, NavigableString
+
+# Load HTML file
+html_files = r"D:\cef_risk_table\cik0001963682-20240223_unwrap_start_end.htm"
+with open(html_files, "r", encoding="utf-8") as f:
+    html = f.read()
+soup = BeautifulSoup(html, "html.parser")
+
+# Locate start and end markers
+start_marker = None
+end_marker = None
+for text_node in soup.find_all(string=True):
+    if "[[Risk-Start]]" in text_node:
+        start_marker = text_node
+    if "[[Risk-End]]" in text_node:
+        end_marker = text_node
+
+if start_marker and end_marker:
+    # Extract elements between the markers
+    all_elements = list(soup.descendants)
+    start_index = all_elements.index(start_marker)
+    end_index = all_elements.index(end_marker)
+    boundary_elements = all_elements[start_index + 1:end_index]
+    boundary_tags = [el for el in boundary_elements if isinstance(el, Tag)]
+
+    # Insert <start> tags
+    target_style = 'font-weight:bold;display:inline;'
+    start_tags = []
+    start_tag_counter = 1
+
+    for tag in boundary_tags:
+        style_attr = tag.get('style', '')
+        if style_attr.strip() == target_style:
+            style_texts = tag.find_all(string=True)
+            if style_texts:
+                dimension_text = style_texts[0].strip().replace(" ", "_")
+                start_tag = soup.new_tag("start", attrs={
+                    "name": "risk_text_block",
+                    "data-dimention": dimension_text,
+                    "id": f"risk-start-{start_tag_counter}"
+                })
+                style_texts[0].insert_before(start_tag)
+                start_tags.append(start_tag)
+                start_tag_counter += 1
+
+    # Insert <end> tags for all except the last <start>
+    for i in range(1, len(start_tags)):
+        prev_start = start_tags[i - 1]
+        current_start = start_tags[i]
+
+        # Find previous text node before current <start>
+        prev_text = current_start.find_previous(string=True)
+        if isinstance(prev_text, NavigableString):
+            end_tag = soup.new_tag("end", attrs={
+                "name": "risk_text_block",
+                "id": f"risk-end-{i}"
+            })
+            prev_text.insert_after(end_tag)
+
+else:
+    print("Boundary markers not found in the document.")
+
+# Save modified HTML
+with open("tagged_output.html", "w", encoding="utf-8") as f:
+    f.write(str(soup))
