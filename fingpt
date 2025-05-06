@@ -1,0 +1,323 @@
+https://huggingface.co/second-state/FinGPT-MT-Llama-3-8B-LoRA-GGUF/tree/main
+
+
+
+
+Great question. Here's exactly how to load and use the FinGPT .gguf model with Ollama step by step.
+
+✅ Step-by-Step: Load FinGPT .gguf Model with Ollama
+🧩 Prerequisites
+You’ve already downloaded a quantized FinGPT GGUF model (e.g., FinGPT-MT-Llama-3-8B-LoRA-Q4_K_M.gguf)
+
+You’ve installed Ollama on your machine
+
+✅ Step 1: Create a Modelfile
+In the same folder where your .gguf file is located, create a file named Modelfile (no extension).
+
+plaintext
+Copy
+Edit
+FROM ./FinGPT-MT-Llama-3-8B-LoRA-Q4_K_M.gguf
+PARAMETER temperature 0.7
+SYSTEM "You are a helpful financial assistant."
+🔁 Replace the filename in FROM with the exact name of your .gguf file.
+
+✅ Step 2: Create the Ollama Model
+Open your terminal or command prompt and run:
+
+bash
+Copy
+Edit
+ollama create fingpt -f Modelfile
+This command:
+
+Registers a new local model named fingpt in Ollama
+
+Uses the .gguf file as the base model
+
+Applies any custom parameters (e.g. temperature, system prompt)
+
+✅ Step 3: Run the Model Interactively
+You can now start chatting with the model:
+
+bash
+Copy
+Edit
+ollama run fingpt
+It will open a simple prompt in your terminal where you can ask questions like:
+
+text
+Copy
+Edit
+What is inflation and how does it affect investment strategies?
+✅ Step 4: Call Ollama from Python (optional)
+If you're building a chatbot (like your PDF RAG project), use:
+
+python
+Copy
+Edit
+import subprocess
+
+def query_ollama(prompt, model="fingpt"):
+    result = subprocess.run(
+        ["ollama", "run", model],
+        input=prompt.encode(),
+        capture_output=True
+    )
+    return result.stdout.decode()
+✅ Final Notes
+You can repeat ollama create to register other .gguf models
+
+All models are stored locally (no cloud dependency)
+
+Ollama manages the tokenization + generation internally, even for custom models
+
+Would you like me to bundle this together with the full RAG-style PDF chatbot code for you as a .py script?
+
+
+
+
+
+pip install pypdf sentence-transformers scikit-learn
+
+import subprocess
+from PyPDF2 import PdfReader
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+
+# 1. Load and extract text from PDF
+def extract_pdf_text(pdf_path):
+    reader = PdfReader(pdf_path)
+    return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+# 2. Chunk the text
+def chunk_text(text, chunk_size=500):
+    return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+
+# 3. Embed chunks
+embedder = SentenceTransformer("all-MiniLM-L6-v2")
+
+def embed_chunks(chunks):
+    return embedder.encode(chunks, convert_to_numpy=True)
+
+# 4. Retrieve top-k relevant chunks
+def get_top_chunks(query, chunks, embeddings, k=3):
+    query_emb = embedder.encode([query], convert_to_numpy=True)
+    scores = cosine_similarity(query_emb, embeddings)[0]
+    top_indices = scores.argsort()[-k:][::-1]
+    return [chunks[i] for i in top_indices]
+
+# 5. Query Ollama (FinGPT model)
+def query_ollama(prompt, model="fingpt"):
+    result = subprocess.run(
+        ["ollama", "run", model],
+        input=prompt.encode(),
+        capture_output=True
+    )
+    return result.stdout.decode()
+
+# 6. Combine all together in RAG pipeline
+def ask_question_to_pdf_bot(pdf_path, question):
+    print("[INFO] Reading PDF...")
+    text = extract_pdf_text(pdf_path)
+    chunks = chunk_text(text)
+    embeddings = embed_chunks(chunks)
+
+    print("[INFO] Retrieving relevant context...")
+    top_chunks = get_top_chunks(question, chunks, embeddings)
+
+    context = "\n".join(top_chunks)
+    prompt = f"""You are a helpful financial assistant.
+Use the following context to answer the question:
+
+{context}
+
+Question: {question}
+Answer:"""
+
+    print("[INFO] Asking FinGPT...")
+    return query_ollama(prompt)
+
+# 🧪 Test It
+pdf_file = "your_file.pdf"  # <- replace with your own
+question = "What are the financial risks mentioned in this report?"
+answer = ask_question_to_pdf_bot(pdf_file, question)
+
+print("\n🧠 Answer:\n", answer)
+
+
+
+
+
+
+
+
+
+import chromadb
+from chromadb.config import Settings
+from PyPDF2 import PdfReader
+from sentence_transformers import SentenceTransformer
+import subprocess
+
+# 1. PDF Text Extraction
+def extract_pdf_text(pdf_path):
+    reader = PdfReader(pdf_path)
+    return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+# 2. Chunking Text
+def chunk_text(text, chunk_size=500):
+    return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+
+# 3. Set up ChromaDB
+client = chromadb.Client(Settings(
+    chroma_db_impl="duckdb+parquet",
+    persist_directory="./chromadb_fingpt"  # saves your index
+))
+
+collection = client.get_or_create_collection(name="fingpt-pdf")
+
+# 4. Embed Chunks and Store in Vector DB
+def store_chunks_in_chroma(chunks):
+    embedder = SentenceTransformer("all-MiniLM-L6-v2")
+    embeddings = embedder.encode(chunks, convert_to_numpy=True)
+    ids = [f"chunk_{i}" for i in range(len(chunks))]
+    collection.add(documents=chunks, embeddings=embeddings.tolist(), ids=ids)
+
+# 5. Query ChromaDB for top chunks
+def retrieve_relevant_chunks(query, k=3):
+    return collection.query(query_texts=[query], n_results=k)["documents"][0]
+
+# 6. Query FinGPT via Ollama
+def query_ollama(prompt, model="fingpt"):
+    result = subprocess.run(
+        ["ollama", "run", model],
+        input=prompt.encode(),
+        capture_output=True
+    )
+    return result.stdout.decode()
+
+# 7. Main RAG Function
+def rag_ask(pdf_path, question):
+    print("[INFO] Extracting and storing chunks...")
+    text = extract_pdf_text(pdf_path)
+    chunks = chunk_text(text)
+
+    if collection.count() == 0:
+        store_chunks_in_chroma(chunks)
+        client.persist()
+
+    print("[INFO] Retrieving relevant context...")
+    top_chunks = retrieve_relevant_chunks(question)
+    context = "\n".join(top_chunks)
+
+    prompt = f"""You are a helpful financial assistant.
+
+Use the following context to answer the question:
+
+{context}
+
+Question: {question}
+Answer:"""
+
+    print("[INFO] Asking FinGPT via Ollama...")
+    return query_ollama(prompt)
+
+# 8. Run Chat
+pdf_path = "your_file.pdf"  # Replace with your PDF
+question = "What are the key financial risks mentioned?"
+response = rag_ask(pdf_path, question)
+
+print("\n🧠 FinGPT Answer:\n", response)
+
+
+
+
+
+
+
+
+
+
+
+import streamlit as st
+from PyPDF2 import PdfReader
+from sentence_transformers import SentenceTransformer
+import chromadb
+from chromadb.config import Settings
+import subprocess
+import tempfile
+import os
+
+# Initialize ChromaDB
+client = chromadb.Client(Settings(
+    chroma_db_impl="duckdb+parquet",
+    persist_directory="./chromadb_fingpt"
+))
+collection = client.get_or_create_collection(name="fingpt-pdf")
+embedder = SentenceTransformer("all-MiniLM-L6-v2")
+
+# Utility functions
+def extract_pdf_text(file):
+    reader = PdfReader(file)
+    return "\n".join([page.extract_text() or "" for page in reader.pages])
+
+def chunk_text(text, chunk_size=500):
+    return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+
+def embed_and_store(chunks):
+    if collection.count() == 0:
+        embeddings = embedder.encode(chunks, convert_to_numpy=True)
+        ids = [f"chunk_{i}" for i in range(len(chunks))]
+        collection.add(documents=chunks, embeddings=embeddings.tolist(), ids=ids)
+        client.persist()
+
+def retrieve_top_chunks(query, k=3):
+    return collection.query(query_texts=[query], n_results=k)["documents"][0]
+
+def query_ollama(prompt, model="fingpt"):
+    result = subprocess.run(["ollama", "run", model],
+                            input=prompt.encode(),
+                            capture_output=True)
+    return result.stdout.decode()
+
+def build_prompt(context_chunks, question):
+    context = "\n".join(context_chunks)
+    return f"""You are a helpful financial assistant.
+
+Use the following context to answer the question:
+
+{context}
+
+Question: {question}
+Answer:"""
+
+# Streamlit UI
+st.set_page_config(page_title="FinGPT PDF Chatbot", layout="wide")
+st.title("📄🤖 FinGPT PDF Chatbot (RAG with Ollama)")
+
+with st.sidebar:
+    st.markdown("### Upload a PDF to begin")
+    uploaded_file = st.file_uploader("Choose a PDF", type="pdf")
+
+if uploaded_file:
+    question = st.text_input("Ask a question about the PDF:")
+    if st.button("Submit Question") and question:
+        # Step 1: Extract and chunk text
+        with st.spinner("Processing PDF..."):
+            text = extract_pdf_text(uploaded_file)
+            chunks = chunk_text(text)
+            embed_and_store(chunks)
+
+        # Step 2: Retrieve context & build prompt
+        top_chunks = retrieve_top_chunks(question)
+        prompt = build_prompt(top_chunks, question)
+
+        # Step 3: Ask Ollama
+        with st.spinner("Getting response from FinGPT..."):
+            answer = query_ollama(prompt)
+
+        st.markdown("### 🧠 FinGPT Answer")
+        st.success(answer)
+
+
