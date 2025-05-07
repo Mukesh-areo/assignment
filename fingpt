@@ -345,3 +345,60 @@ def query_ollama(prompt, model="fingpt"):
 
 
 ollama pull hf.co/second-state/FinGPT-MT-Llama-3-8B-LoRA-GGUF:Q4_K_M --name fingpt
+
+
+
+
+
+
+import streamlit as st
+from langchain.document_loaders import PyMuPDFLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.vectorstores import FAISS
+from langchain.llms import Ollama
+from langchain.chains import RetrievalQA
+import tempfile
+
+st.set_page_config(page_title="PDF RAG Bot (FinGPT - In Memory)", layout="wide")
+st.title("PDF RAG Bot using FinGPT (In-Memory RAG)")
+
+# Upload PDF
+uploaded_file = st.file_uploader("Upload a financial PDF file", type=["pdf"])
+if uploaded_file:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(uploaded_file.read())
+        pdf_path = tmp.name
+
+    # Load and chunk
+    loader = PyMuPDFLoader(pdf_path)
+    documents = loader.load()
+
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
+    chunks = text_splitter.split_documents(documents)
+
+    # Embedding and in-memory FAISS index
+    st.write("Generating embeddings and creating in-memory index...")
+    embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-large-en-v1.5")
+    vectordb = FAISS.from_documents(documents=chunks, embedding=embeddings)
+    retriever = vectordb.as_retriever()
+
+    # Load FinGPT from Ollama
+    llm = Ollama(model="fingpt-mt-llama3")
+
+    qa_chain = RetrievalQA.from_chain_type(
+        llm=llm,
+        retriever=retriever,
+        return_source_documents=True
+    )
+
+    st.success("Ready to ask questions about your PDF!")
+    query = st.text_input("Ask a question about the uploaded financial document:")
+    if query:
+        result = qa_chain({"query": query})
+        st.write("**Answer:**", result["result"])
+
+        with st.expander("Sources"):
+            for doc in result["source_documents"]:
+                st.markdown(f"**Page:** {doc.metadata.get('page', 'N/A')}")
+                st.text(doc.page_content[:500])
