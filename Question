@@ -1,0 +1,125 @@
+1. How did you use NLP to extract invoice content using LLMs?
+
+We used Llama 2 via LangChain to extract structured data from unstructured invoice text.
+Prompt templates and few-shot examples guided the model to extract key fields like invoice number and totals.
+We handled hallucinations using format validation and LangChain output parsers.
+This approach reduced manual effort by 25% and worked well across diverse invoice formats.
+
+
+---
+
+2. How did you improve adjuster assignment using machine learning?
+
+We trained a TensorFlow-based classifier using past claims data to predict the best adjuster.
+Key features included claim type, severity, location, and adjuster history.
+The model improved assignment accuracy by 18% compared to the old rule-based logic.
+This led to faster claim handling and better workload distribution.
+
+
+---
+
+3. What roles did spaCy, LangChain, and Hugging Face play?
+
+LangChain managed prompt chaining, output parsing, and fallback logic with Llama 2.
+Hugging Face Transformers powered Llama 2 for invoice field extraction.
+spaCy was used for validating named entities and structured patterns.
+Each tool was chosen based on the complexity and flexibility needed for the task.
+
+
+---
+
+4. How did you measure the 30% efficiency improvement?
+
+We tracked metrics like processing time, accuracy, and manual intervention rate.
+Manual efforts dropped by 25% and claims routing became faster with ML.
+Field-level extraction was benchmarked against test sets for precision.
+Combined, this resulted in a verified 30% boost in operational efficiency.
+
+
+---
+
+5. How did you handle deployment, scalability, and performance?
+
+The solution was deployed using Docker and served via FastAPI.
+Llama 2 was optimized using quantized GGUF models for faster inference.
+Batch queues and parallel chains improved throughput and reduced latency.
+We ensured stable response times under 5 seconds per document.
+
+
+
+
+
+
+<!DOCTYPE html>
+<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL">
+<head>
+  <meta charset="UTF-8">
+  <title>Sample XBRL Tagging</title>
+</head>
+<body>
+  <h1>ABC Corporation</h1>
+  <h2>Income Statement (FY 2024)</h2>
+
+  <table border="1">
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th>Amount (USD)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Revenue</td>
+        <td>
+          <ix:nonfraction name="us-gaap:Revenues" contextRef="FY2024" unitRef="USD" decimals="0">1500000</ix:nonfraction>
+        </td>
+      </tr>
+      <tr>
+        <td>Cost of Goods Sold</td>
+        <td>
+          <ix:nonfraction name="us-gaap:CostOfGoodsSold" contextRef="FY2024" unitRef="USD" decimals="0">900000</ix:nonfraction>
+        </td>
+      </tr>
+      <tr>
+        <td>Operating Expenses</td>
+        <td>
+          <ix:nonfraction name="us-gaap:OperatingExpenses" contextRef="FY2024" unitRef="USD" decimals="0">200000</ix:nonfraction>
+        </td>
+      </tr>
+      <tr>
+        <td>Net Income</td>
+        <td>
+          <ix:nonfraction name="us-gaap:NetIncomeLoss" contextRef="FY2024" unitRef="USD" decimals="0">400000</ix:nonfraction>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- XBRL Context -->
+  <ix:context id="FY2024">
+    <ix:entity>
+      <ix:identifier scheme="http://www.sec.gov/CIK">0001234567</ix:identifier>
+    </ix:entity>
+    <ix:period>
+      <ix:startDate>2024-01-01</ix:startDate>
+      <ix:endDate>2024-12-31</ix:endDate>
+    </ix:period>
+  </ix:context>
+
+  <!-- XBRL Unit -->
+  <ix:unit id="USD">
+    <ix:measure>iso4217:USD</ix:measure>
+  </ix:unit>
+</body>
+</html>
+
+
+
+Bert architecture 
+Lstm architecture 
+Beautiful soup html phrasing 
+How to fine-tuning llm models in locally with ollama interface
+
+metrics 
+
+
